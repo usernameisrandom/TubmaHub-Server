@@ -8,7 +8,7 @@ import os
 app = Flask(__name__)
 
 # Telegram Bot Token
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN','8693862606:AAFiTHQ_6MTC-FV49N3ozT-UBGqz__18cI8')
 
 # Admin IDs
 # FULL_ADMINS have access to everything, including Crash and Execute.
