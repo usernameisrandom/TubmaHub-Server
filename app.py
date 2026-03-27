@@ -26,7 +26,7 @@ TELEGRAM_CHAT_ID = FULL_ADMINS[0] if FULL_ADMINS else None
 # --- НАСТРОЙКИ GITHUB DB ---
 # ВНИМАНИЕ: Вставь сюда НОВЫЙ токен от GitHub!
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', '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')
-REPO_OWNER = 'repositorykreml1n'
+REPO_OWNER = 'usernameisrandom'
 REPO_NAME = 'commands'
 FILE_PATH = 'players.json'
 
