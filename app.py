@@ -17,9 +17,9 @@ FULL_ADMINS_STR = os.getenv('FULL_ADMINS')
 SEMI_ADMINS_STR = os.getenv('SEMI_ADMINS')
 
 # Задаем свой ID как дефолтный, если сервер не найдет переменную
-FULL_ADMINS_STR = os.getenv('FULL_ADMINS', '8426928414')
+FULL_ADMINS_STR = os.getenv('FULL_ADMINS')
 # Для полу-админов дефолт - пустая строка
-SEMI_ADMINS_STR = os.getenv('SEMI_ADMINS', '1165708688')
+SEMI_ADMINS_STR = os.getenv('SEMI_ADMINS')
 
 FULL_ADMINS = [int(admin_id.strip()) for admin_id in FULL_ADMINS_STR.split(',') if admin_id.strip()]
 SEMI_ADMINS = [int(admin_id.strip()) for admin_id in SEMI_ADMINS_STR.split(',') if admin_id.strip()]
