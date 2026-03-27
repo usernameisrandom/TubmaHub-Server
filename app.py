@@ -4,11 +4,13 @@ import json
 import base64
 import time
 import os
+import threading
 
 app = Flask(__name__)
 
 # Telegram Bot Token
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+SHARED_SECRET = os.getenv('SHARED_SECRET', 'my_secure_secret_123')
 
 # --- СИСТЕМА АДМИНОВ И РОЛЕЙ ---
 FULL_ADMINS_STR = os.getenv('FULL_ADMINS', '')
@@ -69,6 +71,10 @@ def save_players_to_github():
         
     requests.put(url, headers=headers, json=data)
 
+def save_players_to_github_async():
+    """Запускает сохранение в отдельном потоке, чтобы не блокировать ответ API."""
+    threading.Thread(target=save_players_to_github).start()
+
 # --- ХЕЛПЕРЫ ДЛЯ TELEGRAM ---
 def send_telegram_message(chat_id, text, reply_markup=None, parse_mode=None):
     payload = {"chat_id": chat_id, "text": text}
@@ -104,6 +110,9 @@ def home():
 
 @app.route('/api/send_message', methods=['POST'])
 def send_message_from_client():
+    if request.headers.get('Authorization') != SHARED_SECRET:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
     data = request.json
     if not data or 'text' not in data:
         return jsonify({"status": "error", "message": "No text provided"}), 400
@@ -114,6 +123,9 @@ def send_message_from_client():
 
 @app.route('/api/log_user', methods=['POST'])
 def log_user():
+    if request.headers.get('Authorization') != SHARED_SECRET:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
     data = request.json
     if not data:
         return jsonify({"status": "error", "message": "No data"}), 400
@@ -123,7 +135,7 @@ def log_user():
     
     if username not in commands_queue:
         commands_queue[username] = []
-        save_players_to_github()
+        save_players_to_github_async()
         
     last_seen[username] = time.time()
 
@@ -142,6 +154,9 @@ def log_user():
 
 @app.route('/api/ping', methods=['GET'])
 def ping():
+    if request.headers.get('Authorization') != SHARED_SECRET:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
     username = request.args.get('username')
     if username:
         last_seen[username] = time.time()
@@ -149,6 +164,9 @@ def ping():
 
 @app.route('/api/get_command', methods=['GET'])
 def get_command():
+    if request.headers.get('Authorization') != SHARED_SECRET:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
     username = request.args.get('username')
     if username in commands_queue and len(commands_queue[username]) > 0:
         cmd = commands_queue[username].pop(0)
