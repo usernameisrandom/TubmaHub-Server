@@ -10,11 +10,6 @@ app = Flask(__name__)
 # Telegram Bot Token
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
-# Admin IDs
-# FULL_ADMINS have access to everything, including Crash and Execute.
-# SEMI_ADMINS have access to most functions except the most dangerous ones.
-FULL_ADMINS_STR = os.getenv('FULL_ADMINS')
-SEMI_ADMINS_STR = os.getenv('SEMI_ADMINS')
 
 # Задаем свой ID как дефолтный, если сервер не найдет переменную
 FULL_ADMINS_STR = os.getenv('FULL_ADMINS')
