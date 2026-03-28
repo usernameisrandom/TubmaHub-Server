@@ -261,9 +261,9 @@ def telegram_webhook():
                 keyboard = {"inline_keyboard": keyboard_layout}
                 send_telegram_message(
                     chat_id, 
-                    f"👤 **Профиль: {target_user}**\nЧто будем делать?", 
+                    f"👤 <b>Профиль: {target_user}</b>\nЧто будем делать?", 
                     reply_markup=keyboard,
-                    parse_mode="Markdown"
+                    parse_mode="HTML"
                 )
 
             # 5. Action Button Handling
@@ -277,11 +277,11 @@ def telegram_webhook():
 
             elif btn_action == "execselect":
                 awaiting_execute[user_id] = target_user
-                send_telegram_message(chat_id, f"✍️ Отправь мне Lua-код для выполнения на клиенте **{target_user}**:", parse_mode="Markdown")
+                send_telegram_message(chat_id, f"✍️ Отправь мне Lua-код для выполнения на клиенте <b>{target_user}</b>:", parse_mode="HTML")
             
             elif btn_action == "message":
                 awaiting_msg_text[user_id] = target_user
-                send_telegram_message(chat_id, f"✍️ Отправь мне текст сообщения для игрока **{target_user}**:", parse_mode="Markdown")
+                send_telegram_message(chat_id, f"✍️ Отправь мне текст сообщения для игрока <b>{target_user}</b>:", parse_mode="HTML")
 
             # 6. Kick Handling (Тоже динамическое!)
             elif btn_action == "kick":
