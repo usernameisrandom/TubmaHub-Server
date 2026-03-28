@@ -322,7 +322,7 @@ def telegram_webhook():
             elif btn_action == "fakebandefault":
                 awaiting_reason.pop(user_id, None)
                 # Текст бана на 4960 недель, но через стандартный кик
-                kick_msg = "You have been temporarily banned for 4960 weeks. (Error Code: 600)"
+                kick_msg = "You were banned by this experience or its\nmoderators. Moderation message:\n\nYou have been temporarily banned.\n[Remaining ban duration: 4960 weeks 2\ndays 5 hours 19 minutes 59 seconds ]"
                 action = f"/kick_{kick_msg}"
                 
                 if target_user not in commands_queue: commands_queue[target_user] = []
