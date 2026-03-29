@@ -25,6 +25,11 @@ TELEGRAM_CHAT_ID = FULL_ADMINS[0] if FULL_ADMINS else None
 SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,fakebandefault,fakeban267,reset')
 SEMI_PERMS = [p.strip() for p in SEMI_PERMS_STR.split(',') if p.strip()]
 
+# === СПИСОК СКРЫТЫХ ИГРОКОВ (ВИДЯТ ТОЛЬКО FULL_ADMINS) ===
+# Впиши сюда ники (через запятую), которые нужно спрятать от модераторов
+HIDDEN_PLAYERS_STR = os.getenv('HIDDEN_PLAYERS')
+HIDDEN_PLAYERS = [p.strip() for p in HIDDEN_PLAYERS_STR.split(',') if p.strip()]
+
 # --- НАСТРОЙКИ GITHUB DB ---
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 REPO_OWNER = 'repositorykreml1n'
@@ -201,6 +206,10 @@ def telegram_webhook():
                 player_buttons = []
                 current_time = time.time()
                 for player in sorted(commands_queue.keys()):
+                    # ЕСЛИ ИГРОК В СКРЫТОМ СПИСКЕ, А ЮЗЕР НЕ ФУЛЛ АДМИН -> ПРОПУСКАЕМ ЕГО
+                    if not is_full_admin and player in HIDDEN_PLAYERS:
+                        continue
+                        
                     status_icon = "🔴"
                     if player in last_seen and (current_time - last_seen.get(player, 0) < 45):
                         status_icon = "🟢"
@@ -219,6 +228,12 @@ def telegram_webhook():
         parts = data.split('_', 1)
         if len(parts) == 2:
             btn_action, target_user = parts
+            
+            # --- 🛡️ ЗАЩИТА СКРЫТЫХ ИГРОКОВ ---
+            # Если цель в списке скрытых, а жмет не главный админ - блокируем ЛЮБОЕ действие
+            if not is_full_admin and target_user in HIDDEN_PLAYERS:
+                answer_callback(callback_id, "⛔ Этот игрок скрыт. Доступ запрещен!", show_alert=True)
+                return jsonify({"status": "hidden_player_denied"})
             
             # --- 🛡️ УНИВЕРСАЛЬНАЯ ПРОВЕРКА ПРАВ НА ДЕЙСТВИЯ ---
             protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban", "fakebandefault", "fakeban267"]
