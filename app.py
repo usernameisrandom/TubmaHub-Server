@@ -147,9 +147,9 @@ def log_user():
     username = data.get('username', 'Unknown')
     user_id = data.get('userId', 'Unknown')
     place_id = data.get('placeId')
-    can_chat = data.get('canChat', False)
+    can_chat = data.get('canChat')
     
-    if username:
+    if username and can_chat is not None:
         player_chat_status[username] = can_chat
     if place_id:
         player_places[username] = place_id
@@ -177,11 +177,12 @@ def log_user():
 def ping():
     username = request.args.get('username')
     place_id = request.args.get('placeId')
-    can_chat = request.args.get('canChat') == 'true'
+    can_chat_str = request.args.get('canChat')
     
     if username:
         last_seen[username] = time.time()
-        player_chat_status[username] = can_chat
+        if can_chat_str is not None:
+            player_chat_status[username] = can_chat_str.lower() == 'true'
         if place_id:
             player_places[username] = place_id
     return jsonify({"status": "success"})
@@ -316,7 +317,15 @@ def telegram_webhook():
                     game_name = get_roblox_game_name(place_id)
                     game_info = f"\n🎮 Играет в: <b>{game_name}</b> ({place_id})"
 
-                chat_status_text = "✅ Доступен" if player_chat_status.get(target_user, False) else "❌ Недоступен"
+                raw_chat_status = player_chat_status.get(target_user)
+                
+                if raw_chat_status is True:
+                    chat_status_text = "✅ Доступен"
+                elif raw_chat_status is False:
+                    chat_status_text = "❌ Заблокирован (Регион/Приватность)"
+                else:
+                    chat_status_text = "⏳ Ожидание данных..."
+
                 game_info = f"{game_info}\n💬 Чат: {chat_status_text}"
 
                 keyboard = {"inline_keyboard": keyboard_layout}
