@@ -30,6 +30,18 @@ SEMI_PERMS = [p.strip() for p in SEMI_PERMS_STR.split(',') if p.strip()]
 HIDDEN_PLAYERS_STR = os.getenv('HIDDEN_PLAYERS')
 HIDDEN_PLAYERS = [p.strip() for p in HIDDEN_PLAYERS_STR.split(',') if p.strip()]
 
+PLAYERS_PER_PAGE = 8
+SLAP_BATTLES_LUA = """
+-- [[ SLAP BATTLES ADMIN TOOL ]] --
+local p = game.Players.LocalPlayer
+local char = p.Character or p.CharacterAdded:Wait()
+-- Скрипт: Анти-регдолл + Увеличение силы шлепка (пример)
+if char:FindFirstChild("Humanoid") then
+    char.Humanoid.WalkSpeed = 25
+    print("Slap Battles Admin Script Loaded")
+end
+"""
+
 # --- НАСТРОЙКИ GITHUB DB ---
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 REPO_OWNER = 'repositorykreml1n'
@@ -226,33 +238,99 @@ def telegram_webhook():
         callback_id = callback["id"]
 
         if data == "menu_games":
-            answer_callback(callback_id, "Раздел Игры пока пуст!", show_alert=True)
+            if is_full_admin:
+                keyboard = {
+                    "inline_keyboard": [
+                        [{"text": "🖐️ Slap Battles", "callback_data": "games_slap:0"}],
+                        [{"text": "🔙 Назад", "callback_data": "menu_main"}]
+                    ]
+                }
+                send_telegram_message(chat_id, "🎮 <b>Раздел Игр:</b>", reply_markup=keyboard, parse_mode="HTML")
+            else:
+                answer_callback(callback_id, "Раздел Игры пока пуст!", show_alert=True)
+            answer_callback(callback_id)
             return jsonify({"status": "ok"})
             
-        elif data == "menu_players":
+        elif data == "menu_main":
+            keyboard = {
+                "inline_keyboard": [
+                    [{"text": "👥 Игроки", "callback_data": "menu_players:0"}],
+                    [{"text": "🎮 Игры", "callback_data": "menu_games"}]
+                ]
+            }
+            send_telegram_message(chat_id, "🎛 <b>Главное меню TumbaHub</b>\nВыберите раздел:", reply_markup=keyboard, parse_mode="HTML")
+            answer_callback(callback_id)
+            return jsonify({"status": "ok"})
+
+        elif data.startswith("menu_players") or data.startswith("games_slap"):
+            is_slap = data.startswith("games_slap")
+            
+            if is_slap and not is_full_admin:
+                answer_callback(callback_id, "⛔ Доступ запрещен!", show_alert=True)
+                return jsonify({"status": "permission_denied"})
+            
+            parts = data.split(":")
+            page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+
             if not commands_queue:
-                send_telegram_message(chat_id, "⚠️ В базе пока нет игроков.")
+                send_telegram_message(chat_id, "⚠️ В базе пока нет игроков.", parse_mode="HTML")
             else:
-                player_buttons = []
-                current_time = time.time()
+                visible_players = []
                 for player in sorted(commands_queue.keys()):
-                    # ЕСЛИ ИГРОК В СКРЫТОМ СПИСКЕ, А ЮЗЕР НЕ ФУЛЛ АДМИН -> ПРОПУСКАЕМ ЕГО
                     if not is_full_admin and player in HIDDEN_PLAYERS:
                         continue
-                        
+                    visible_players.append(player)
+                    
+                total_players = len(visible_players)
+                start_idx = page * PLAYERS_PER_PAGE
+                end_idx = start_idx + PLAYERS_PER_PAGE
+                current_players = visible_players[start_idx:end_idx]
+
+                player_buttons = []
+                current_time = time.time()
+                for player in current_players:
                     status_icon = "🔴"
                     if player in last_seen and (current_time - last_seen.get(player, 0) < 45):
                         status_icon = "🟢"
-                    player_buttons.append([{"text": f"{status_icon} {player}", "callback_data": f"playerprof_{player}"}])
+                    
+                    cb_data = f"slap_select_{player}" if is_slap else f"playerprof_{player}"
+                    player_buttons.append([{"text": f"{status_icon} {player}", "callback_data": cb_data}])
                 
+                nav_buttons = []
+                prefix = "games_slap" if is_slap else "menu_players"
+                if page > 0:
+                    nav_buttons.append({"text": "⬅️ Пред.", "callback_data": f"{prefix}:{page-1}"})
+                if end_idx < total_players:
+                    nav_buttons.append({"text": "След. ➡️", "callback_data": f"{prefix}:{page+1}"})
+                
+                if nav_buttons:
+                    player_buttons.append(nav_buttons)
+                    
+                if is_slap:
+                    player_buttons.append([{"text": "🔙 Назад", "callback_data": "menu_games"}])
+                else:
+                    player_buttons.append([{"text": "🔙 Назад", "callback_data": "menu_main"}])
+                    
                 keyboard = {"inline_keyboard": player_buttons}
-                send_telegram_message(
-                    chat_id, 
-                    "👥 **Список игроков:**\nВыберите для управления:",
-                    reply_markup=keyboard,
-                    parse_mode="Markdown"
-                )
+                text = "👥 <b>Выберите игрока для скрипта Slap Battles:</b>" if is_slap else "👥 <b>Список игроков:</b>\nВыберите для управления:"
+                send_telegram_message(chat_id, text, reply_markup=keyboard, parse_mode="HTML")
+            
             answer_callback(callback_id)
+            return jsonify({"status": "ok"})
+
+        elif data.startswith("slap_select_"):
+            if not is_full_admin:
+                answer_callback(callback_id, "⛔ Доступ запрещен!", show_alert=True)
+                return jsonify({"status": "permission_denied"})
+                
+            target_user = data.split("slap_select_", 1)[1]
+            
+            action = f"/execute__{SLAP_BATTLES_LUA}"
+            if target_user not in commands_queue: commands_queue[target_user] = []
+            commands_queue[target_user].append(action)
+            
+            send_telegram_message(chat_id, f"✅ Скрипт Slap Battles отправлен игроку <b>{target_user}</b>!", parse_mode="HTML")
+            answer_callback(callback_id, "✅ Скрипт отправлен!")
             return jsonify({"status": "ok"})
 
         parts = data.split('_', 1)
@@ -424,11 +502,11 @@ def telegram_webhook():
         if text == "/menu":
             keyboard = {
                 "inline_keyboard": [
-                    [{"text": "👥 Игроки", "callback_data": "menu_players"}],
+                    [{"text": "👥 Игроки", "callback_data": "menu_players:0"}],
                     [{"text": "🎮 Игры", "callback_data": "menu_games"}]
                 ]
             }
-            send_telegram_message(chat_id, "🎛 **Главное меню TumbaHub**\nВыберите раздел:", reply_markup=keyboard, parse_mode="Markdown")
+            send_telegram_message(chat_id, "🎛 <b>Главное меню TumbaHub</b>\nВыберите раздел:", reply_markup=keyboard, parse_mode="HTML")
         
         elif user_id in awaiting_reason:
             target_user = awaiting_reason.pop(user_id)
