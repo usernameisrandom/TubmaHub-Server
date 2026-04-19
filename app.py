@@ -275,23 +275,25 @@ def telegram_webhook():
             if not commands_queue:
                 send_telegram_message(chat_id, "⚠️ В базе пока нет игроков.", parse_mode="HTML")
             else:
-                visible_players = []
-                for player in sorted(commands_queue.keys()):
-                    if not is_full_admin and player in HIDDEN_PLAYERS:
-                        continue
-                    visible_players.append(player)
-                    
-                total_players = len(visible_players)
+                current_time = time.time()
+                visible_players = [p for p in commands_queue.keys() if is_full_admin or p not in HIDDEN_PLAYERS]
+                
+                online_players = [p for p in visible_players if p in last_seen and (current_time - last_seen.get(p, 0)) < 45]
+                offline_players = [p for p in visible_players if p not in online_players]
+                
+                online_players.sort()
+                offline_players.sort()
+                
+                sorted_players = online_players + offline_players
+                
+                total_players = len(sorted_players)
                 start_idx = page * PLAYERS_PER_PAGE
                 end_idx = start_idx + PLAYERS_PER_PAGE
-                current_players = visible_players[start_idx:end_idx]
+                current_players = sorted_players[start_idx:end_idx]
 
                 player_buttons = []
-                current_time = time.time()
                 for player in current_players:
-                    status_icon = "🔴"
-                    if player in last_seen and (current_time - last_seen.get(player, 0) < 45):
-                        status_icon = "🟢"
+                    status_icon = "🟢" if player in online_players else "🔴"
                     
                     cb_data = f"slap_select_{player}" if is_slap else f"playerprof_{player}"
                     player_buttons.append([{"text": f"{status_icon} {player}", "callback_data": cb_data}])
