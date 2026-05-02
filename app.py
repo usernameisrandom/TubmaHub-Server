@@ -10,6 +10,7 @@ app = Flask(__name__)
 
 # Telegram Bot Token
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
 
 # --- СИСТЕМА АДМИНОВ И РОЛЕЙ ---
 FULL_ADMINS_STR = os.getenv('FULL_ADMINS', '')
@@ -206,6 +207,31 @@ def get_command():
         cmd = commands_queue[username].pop(0)
         return jsonify({"status": "success", "command": cmd})
     return jsonify({"status": "empty"})
+
+@app.route('/api/ai_chat_proxy', methods=['POST'])
+def ai_chat_proxy():
+    if not GROQ_API_KEY:
+        return jsonify({"error": "GROQ_API_KEY is not set on the server."}), 500
+
+    data = request.json
+    if not data or 'messages' not in data:
+        return jsonify({"error": "Missing 'messages' array in the request body."}), 400
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "temperature": 0.7,
+        "messages": data.get('messages')
+    }
+
+    try:
+        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=30)
+        return jsonify(response.json()), response.status_code
+    except Exception as e:
+        return jsonify({"error": "Connection error", "details": str(e)}), 500
 
 @app.route('/api/telegram_webhook', methods=['POST'])
 def telegram_webhook():
